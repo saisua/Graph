@@ -1,11 +1,13 @@
 import matplotlib.pyplot as plot
 import matplotlib.lines as lines
+import matplotlib.patches as mpatch
 from matplotlib.widgets import Button, LassoSelector, Lasso, CheckButtons
-from matplotlib.patches import Circle
 from matplotlib.pyplot import arrow
 from matplotlib.collections import PatchCollection
+from matplotlib.artist import Artist
 import matplotlib.path
 import math
+import matplotlib
 #Boteh
 
 verbose = 2
@@ -78,11 +80,13 @@ class Graph(object):
         printf("Function Graph.show_graph()",2)
         to_draw = PatchCollection(self.new_to_draw, alpha=self.vertex_default_alpha)
         self.frame = self.figure.add_subplot(111)
+        #frame = ax
         self.frame.add_collection(to_draw)
         #self.frame.append(new_to_draw)
         print(self.new_to_draw)
         self.new_to_draw = []
         plot.show()
+        matplotlib.axes.Axes.draw_idle()
 
     def on_click(self, event):
         coordx, coordy = event.xdata, event.ydata
@@ -93,7 +97,7 @@ class Graph(object):
             if(plot.get_current_fig_manager().toolbar.mode == ''):
                 if(self.mode == 1):
                     self.add_vertex(coordx,coordy)
-                if(self.mode < 3 and len(self.vertex)>=2):
+                elif(self.mode == 2 and len(self.vertex)>=2):
                     self.connect_vertex(self.vertex[len(self.vertex)-2],self.vertex[len(self.vertex)-1])
                 elif(self.mode ==3 and len(self.objects) >= 1):
                     Lasso(event.inaxes, (event.xdata, event.ydata), self.select_lasso)
@@ -147,10 +151,10 @@ class Graph(object):
 
     def remove_vertex(self,vert):
         printf("Function Graph.remove_vertex("+str(vert)+")",2)
-        try:
-            print("Try to remove " + str(vert.get_circle()))
-            self.frame.remove(vert.get_circle())
-        except: print("Not drawn")
+        #try:
+        print("Try to remove " + str(vert.get_circle()))
+        vert.get_circle().remove()
+        #except: print("Not drawn")
         vert.remove_self()
         self.objects.remove(vert)
         self.vertex.remove(vert)
@@ -176,12 +180,6 @@ class Graph(object):
             
     def clear(self):
         printf("Function Graph.clear()",2)
-        print(self.frame)
-        print(plot)
-        print(self.figure)
-        print(self.figure.axes[0])
-        print(PatchCollection)
-        print()
         for vert in self.vertex:
             self.remove_vertex(vert)
         for edge in self.edges:
@@ -195,6 +193,7 @@ class Graph(object):
             self.number_vert = num
             self.position_x = posx
             self.position_y = posy
+            self.circle = []
             self.set_circle(vertex_radius)
             self.adjacent_edges = []
 
@@ -211,10 +210,10 @@ class Graph(object):
             printf("Function Graph.Vertex.get_circle()",3)
             return self.circle
         
-        def set_circle(self, radius):
+        def set_circle(self, radius, main_color="#ff0000", round_color='#ffffff', circle_alpha=0.5):
             printf("Function Graph.Vertex.set_circle("+str(radius)+")",2)
             print(self.position_x,self.position_y)
-            self.circle = Circle((self.position_x,self.position_y),radius)
+            self.circle = mpatch.Circle((self.position_x,self.position_y),radius,alpha=circle_alpha,color=main_color,edgecolor=round_color,visible=True,fill=False)
             
         def add_adjacent(self,new_adj_edge):
             self.adjacent_edges.append(new_adj_edge)
@@ -247,11 +246,13 @@ class Graph(object):
             if(not self.directed):
                 vert2.add_adjacent(self)
             
-        def set_lines(self):
+        def set_lines(self,edge_alpha=0.5,edge_color="0000FF"):
             printf("Function Graph.Edge.set_lines()",2)
             from_pos = self.connected_from.get_vertex_position()
             to_pos = self.connected_to.get_vertex_position()
-            new_line = arrow(from_pos[0],from_pos[1],to_pos[0]-from_pos[0],to_pos[1]-from_pos[1],length_includes_head=True)
+            if self.directed==True: style="<-"
+            else: style="<->"
+            new_line = mpatch.FancyArrowPatch(path=[(from_pos[0],from_pos[1]),(to_pos[0],to_pos[1])],arrow_style=style,alpha=edge_alpha,color=edge_color)
             self.lines.append(new_line)
             #ax.annotate("", xy=(0.5, 0.5), xytext=(0, 0),arrowprops=dict(arrowstyle="->"))
             
