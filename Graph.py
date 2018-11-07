@@ -1,14 +1,24 @@
 import matplotlib.pyplot as plot
 import matplotlib.lines as lines
 import matplotlib.patches as mpatch
+import numpy as np
 from matplotlib.widgets import Button, LassoSelector, Lasso, CheckButtons
 from matplotlib.pyplot import arrow
-from matplotlib.collections import PatchCollection
+from matplotlib.collections import PatchCollection, RegularPolyCollection
 from matplotlib.artist import Artist
+from matplotlib.patches import ArrowStyle
+from matplotlib.colors import colorConverter
 import matplotlib.path
 import math
 import matplotlib
+import random
 #Boteh
+
+print("\n\n")
+print("All libraries imported")
+print("######################")
+print("    Program  start    ")
+print("######################")
 
 verbose = 2
 
@@ -19,33 +29,35 @@ def printf(text, text_verbosity):
 class Graph(object):
     def create_graph(self, zerox=1, zeroy=1, sizex=3, sizey=2, vertex=[], edges=[], mode_setting=1, vertex_default_radius=0.1, vertex_default_alpha=0.5):
         printf("Function Graph.create_graph("+str(zerox)+", "+str(zeroy)+", "+str(sizex)+", "+str(sizey)+", "+str(vertex)+", "+str(edges)+", "+str(mode_setting)+", "+str(vertex_default_radius)+")",2)
+        self.figure = plot.figure()        
+        self.frame = self.figure.add_subplot(111,picker=True,autoscale_on=True)
+        #ax    ^
         self.objects = []
+        self.object_pos = []
         self.vertex = []
-        self.drawn_vertex = []
         self.edges = []
-        self.drawn_edges = []
         self.selected = []
-        self.buttons=[]
         self.mode = mode_setting
         self.center = (zerox,zeroy)
         self.size = (sizex,sizey)
         self.vertex_radius = vertex_default_radius
         self.vertex_radius_lock = False
         self.vertex_default_alpha = .5
-        self.figure = plot.figure()
-        self.figure.canvas.mpl_connect('button_press_event', self.on_click)
-        self.frame = None
         self.new_to_draw = []
+        self.background_color = (1,1,1)
+        self.buttons = []
+        self.history = [self.frame]
+        self.history_at = 0
         #mode0:  nothing                        //any mode on
         #mode1:  add vertex/                   //default
         #mode2:  create lines/arrows
-        #mode3:  select vertex
-        #mode4:  move vertex
-        #mode5:  delete objects
+        #mode3:  select lasso
+        #mode4:  select vertex
+        #mode5:  move objects
 
-    def vertex_auto_position(self,radius=0.5):
+    def vertex_auto_position(self,radius=1.5):
         printf("Function Graph.vertex_auto_position("+str(radius)+")",2)
-        if len(self.vertex) < 1: return -1
+        if(len(self.vertex) < 1): return 
         perimeter = 2*math.pi*radius
         #En un radiox hay dos cuartos
         #Se deben poner la mitad de los vertices entre x
@@ -54,73 +66,155 @@ class Graph(object):
         if(not self.vertex_radius_lock):
             self.vertex_radius = ((self.size[0]*self.size[1]/vertex_num)**(1/2))/2
         for vertex_counter in range(vertex_num):
-            x = radius*cos(angle) + self.center[0];
-            y = radius*sin(angle) + self.center[1];
-            self.vertex[vertex_counter].set_vertex_pos(x,y)
-            self.vertex[vertex_counter].set_circle(self.vertex_size)
+            self.vertex[vertex_counter].set_vertex_pos(radius*math.cos(angle) + self.center[0],radius*math.sin(angle) + self.center[1])
+            self.vertex[vertex_counter].set_circle(self.vertex_radius)
+        #self.clear()
+        #self.objects=self.history[self.history_at]
+        #self.new_to_draw=self.objects
 
-    def setup_graph(self, border_t=0.98, border_r=0.98, border_b=0.12, border_l=0.07, vert_alpha=0.6, start_button_posx=0.1, start_button_posy=0.015, button_sizex=0.1, button_sizey=0.05):
+    def setup_graph(self, border_t=0.98, border_r=0.98, border_b=0.12, border_l=0.07, vert_alpha=0.6, start_button_posx=0.1, start_button_posy=0.015, button_sizex=0.1, button_sizey=0.05, bg_color=False):
         printf("Function Graph.setup_graph("+str(border_t)+", "+str(border_r)+", "+str(border_b)+", "+str(border_l)+", "+str(vert_alpha)+")",2)
         plot.subplots_adjust(left=border_l, bottom=border_b, right=border_r, top=border_t)
         zerox,zeroy = self.center
         sizex,sizey = self.size
         plot.axis([zerox-(sizex),zerox+(sizex),zeroy-(sizey),zeroy+(sizey)])
-        self.add_button('Clear', self.on_click)
-        self.add_button('Add vert', self.on_click)
-        self.add_button('Organize', self.on_click)
-        self.add_button('Lasso', self.on_click)
-        
-    def add_button(self, name, function, start_button_posx=0.1, start_button_posy=0.015, button_sizex=0.1, button_sizey=0.05):
-        new_button_pos = plot.axes([start_button_posx+(button_sizex*(len(self.buttons)*1.5)), start_button_posy, button_sizex, button_sizey])
+        self.last_click = (0,0)
+        self.lasso = False
+        self.keep_selected = False
+        self.click_sel = []
+        self.release_sel = []
+        self.border_b = border_b
+        self.border_l = border_l
+        self.keybindings = {"x":"self.clear()",
+                            "a":"self.add_vertex(coordx,coordy)",
+                            "1":"self.set_mode(1)","w":"self.set_mode(3)",
+                            "o":"self.vertex_auto_position()","escape":"self.set_selected([])",
+                            "q":"self.show_graph()","2":"self.set_mode(2)",
+                            "shift":"self.keep_selected = not self.keep_selected",
+                            "3":"self.set_mode(3)","4":"self.set_mode(4)","5":"self.set_mode(5)",
+                            "z":"self.history_change(-1)","y":"self.history_change(1)"}
+        #qcvspl, 1:mode_v, w:lasso, z:ctrlz, y:ctrly
+        #o:organize, "delete":remo_sel, "escape":select_none
+        #m:move_selected, x:clear, a:add_vertex
+        #"shift":keep_sel, "enter":finish
+        self.figure.canvas.mpl_connect('button_press_event', self.on_click)
+        self.figure.canvas.mpl_connect('button_release_event', self.on_release)
+        self.figure.canvas.mpl_connect('key_press_event', self.on_key)
+        self.figure.canvas.mpl_connect('key_notify_event', self.on_motion)
+        self.add_button('Clear', self.on_click,"self.clear()")
+        self.add_button('Add vert', self.on_click,"self.set_mode(1)")
+        self.add_button('Organize', self.on_click,"self.vertex_auto_position()")
+        self.add_button('Lasso', self.on_click,"self.set_mode(3)")
+        if(not bg_color): bg_color=self.background_color
+        else: self.background_color = bg_color
+        #self.figure.patch.set_facecolor((.9, 0.9, 0.9)
+        self.frame.set_facecolor(self.background_color)
+
+    def add_button(self, name, function, on_release_func, start_button_posx=0.1, start_button_posy=0.015, button_sizex=0.1, button_sizey=0.05):
+        x = start_button_posx+(button_sizex*(len(self.buttons)*1.5))
+        y = start_button_posy
+        new_button_pos = plot.axes([x, y, button_sizex, button_sizey])
         new_button = Button(new_button_pos, name)
-        new_button.on_clicked(function)
-        self.buttons.append(new_button)
+        #new_button.on_clicked(function)
+        self.buttons.append([new_button,str(x)+","+str(y),on_release_func])
         
     def show_graph(self):
         printf("Function Graph.show_graph()",2)
-        to_draw = PatchCollection(self.new_to_draw, alpha=self.vertex_default_alpha)
-        self.frame = self.figure.add_subplot(111)
+        #to_draw = PatchCollection(self.new_to_draw, alpha=self.vertex_default_alpha)
         #frame = ax
-        self.frame.add_collection(to_draw)
-        #self.frame.append(new_to_draw)
-        print(self.new_to_draw)
+        for to_draw in self.new_to_draw:
+            self.frame.add_artist(to_draw)
+        self.history_check()
+        printf("Drawn: " + str(self.new_to_draw),2)
         self.new_to_draw = []
         plot.show()
-        matplotlib.axes.Axes.draw_idle()
+        #matplotlib.axes.Axes.draw_idle()
 
-    def on_click(self, event):
+    def history_check(self):
+        try:
+            if (self.objects != self.history[self.history_at+1]):
+                self.history[self.history_at+1] = self.objects
+                self.history_at+=1
+        except:
+            if (self.objects != self.history[self.history_at]):
+                self.history.append(self.objects)
+                self.history_at+=1
+
+    def on_click(self,event):
         coordx, coordy = event.xdata, event.ydata
         printf("Function Graph.on_click("+str(coordx)+", "+str(coordy)+", "+str(event)+")",2)
         frame_identifier = str(event.inaxes)[str(event.inaxes).find('('):]
-        print(self.mode, frame_identifier, plot.get_current_fig_manager().toolbar.mode)
-        if(frame_identifier == "(0.07,0.12;0.91x0.86)"):     
+        if(frame_identifier == "("+str(self.border_l)+","+str(self.border_b)+";0.91x0.86)" and len(self.objects) >= 1): 
+            self.last_click=(coordx,coordy) 
+            if(self.mode ==3):
+                self.lasso = self.LassoManager(self.frame, self.object_pos, self)     
+                self.lasso.onpress(event)
+            elif(self.mode == 2 or self.mode == 4):
+                self.click_sel = self.select_return(event)
+                if(len(self.click_sel)):
+                    self.click_sel[0].get_circle().set_animated(True)
+        else:
+            try:
+                eval([button[2] for button in self.buttons if frame_identifier == "("+button[1]+";0.1x0.05)"][0])
+            except: pass
+
+    def on_release(self, event):
+        coordx, coordy = event.xdata, event.ydata
+        printf("Function Graph.on_release("+str(coordx)+", "+str(coordy)+", "+str(event)+")",2)
+        frame_identifier = str(event.inaxes)[str(event.inaxes).find('('):]
+        if(frame_identifier == "("+str(self.border_l)+","+str(self.border_b)+";0.91x0.86)"):     
             if(plot.get_current_fig_manager().toolbar.mode == ''):
                 if(self.mode == 1):
                     self.add_vertex(coordx,coordy)
-                elif(self.mode == 2 and len(self.vertex)>=2):
-                    self.connect_vertex(self.vertex[len(self.vertex)-2],self.vertex[len(self.vertex)-1])
-                elif(self.mode ==3 and len(self.objects) >= 1):
-                    Lasso(event.inaxes, (event.xdata, event.ydata), self.select_lasso)
-            else: self.selected = []
-            self.show_graph()
-        elif(frame_identifier == "(0.1,0.015;0.1x0.05)"):
-            self.clear()
-        elif(frame_identifier == "(0.25,0.015;0.1x0.05)"):
-            self.set_mode(1)
-        elif(frame_identifier == "(0.4,0.015;0.1x0.05)"):
-            self.vertex_auto_position()
-        elif(frame_identifier == "(0.55,0.015;0.1x0.05)"):
-            self.set_mode(3)
-        else: self.selected = []
-            
-    def select_lasso(self, lasso_return):
-        printf("Function Graph.select_lasso("+str(lasso_return)+")",2)
-        self.set_mode(3)
-        lasso_obj = matplotlib.path.Path(self.vertex)
-        bool_list = lasso_obj.contains_points(lasso_return)
-        for obj_bool in range(len(bool_list)):
-            if bool_list[obj_bool]:
-                self.selected.append(self.objects[obj_bool])
+                elif((self.mode == 2)and len(self.objects) >= 1):
+                    self.release_sel = self.select_return(event)
+                    if(len(self.click_sel)):
+                        self.connect_selected()
+                elif(self.mode == 5):
+                    try:
+                        obj = self.select_return(event)[0]
+                        eval("self.remove_"+str(type(obj).__name__).lower()+"(obj)")
+                    except: pass
+                elif(self.mode == 4):
+                    if(len(self.click_sel)):
+                        self.click_sel[0].set_vertex_pos(coordx,coordy)
+                        self.new_to_draw.append(self.click_sel[0].get_artist())
+        self.show_graph()
+
+    def on_key(self, event):
+        key, coordx, coordy = event.key, event.xdata, event.ydata
+        printf("Function Graph.on_key("+str(key)+", "+str(coordx)+", "+str(coordy)+", "+str(event)+")",2)
+        try:
+            eval(self.keybindings[key])
+        except: pass
+        self.show_graph()
+
+    def on_motion(self, event):
+        coordx, coordy = event.xdata, event.ydata
+        printf("Function Graph.on_motion("+str(coordx)+", "+str(coordy)+", "+str(event)+")",2)
+        if (plot.get_current_fig_manager().toolbar.mode == ''):
+            if(self.mode == 4):
+                self.click_sel[0].set_vertex_pos(coordx,coordy)
+                self.click_sel[0].set_circle(self.vertex_radius)
+        plot.draw()
+
+    def lasso_return(self, vert_list):        
+        printf("Function Graph.lasso_return("+str(vert_list)+")",2)
+        for vert in range(len(vert_list)):
+            if vert:
+                self.selected.append(self.objects[vert])
+
+    def select_return(self, event, pol_size=0.15):
+        printf("Function select_return("+str(event)+", "+str(pol_size)+")",2)
+        coordx, coordy = event.xdata, event.ydata
+        axind = [self.frame].index(event.inaxes)
+        select_square = matplotlib.path.Path([(coordx+pol_size,coordy+pol_size),(coordx-pol_size,coordy+pol_size),(coordx-pol_size,coordy-pol_size),(coordx+pol_size,coordy-pol_size)])
+        ind = self.obj_from_ind(select_square.contains_points([self.object_pos][axind]))
+        self.set_selected(ind)
+        for obj in ind:
+            self.select_color(obj,(1,0,0))
+        printf("return "+str(ind),3)
+        return ind
 
     def add_vertex(self,posx=1,posy=1):
         printf("Function Graph.add_vertex("+str(posx)+", "+str(posy)+")",2)
@@ -128,12 +222,13 @@ class Graph(object):
         new_vertex.create_vertex(len(self.objects),posx,posy)
         self.vertex.append(new_vertex)
         self.objects.append(new_vertex)
+        self.object_pos.append((posx,posy))
         if(not self.vertex_radius_lock):
-                self.vertex_radius = ((self.size[0]*self.size[1]/len(self.vertex))**(1/2))/2
+            self.vertex_radius = ((self.size[0]*self.size[1]/len(self.vertex))**(1/2))/2
         self.new_to_draw.append(new_vertex.get_circle())
         return new_vertex
 
-    def add_edge(self,segments=2):
+    def add_edge(self,segments=1):
         printf("Function Graph.add_edge("+str(segments)+")",2)
         new_edge = self.Edge()
         new_edge.create_edge(len(self.objects),segments)
@@ -141,51 +236,143 @@ class Graph(object):
         self.objects.append(new_edge)
         return new_edge
 
-    def connect_vertex(self,vert1,vert2,weight=1,directed=False,edge=False):
+    def connect_vertex(self,vert1,vert2,weight=1,directed=True,edge=False):
         printf("Function Graph.connect_vertex("+str(vert1)+", "+str(vert2)+", "+str(weight)+", "+str(directed)+", "+str(edge)+")",2)
         if(not edge): edge = self.add_edge()
         edge.connect_edge(vert1,vert2,weight,directed)
-        edge.set_lines()
-        self.new_to_draw.extend(edge.get_lines())
+        edge.set_line()
+        self.new_to_draw.append(edge.get_line())
         return edge
+
+    def connect_selected(self,selected_from=False,selected_to=False,weight=1):
+        if not selected_from:
+            selected_from = self.type_from_ind(self.click_sel,g_type="Vertex")
+        if not selected_to: 
+            selected_to = self.type_from_ind(self.release_sel,g_type="Vertex")
+        for vert_from in selected_from:
+            for vert_to in selected_to:
+                self.connect_vertex(vert_from, vert_to, weight, directed=True)
+
+    def hide_vertex(self,vert):
+        vert.get_circle().set_alpha(0)
+
+    def hide_edge(self,edge):
+        edge.get_line().set_alpha(0)
+
+    def select_color(self,obj,fcolor=(1,0,0),ecolor=None):
+        printf("Function Graph.select_color("+str(obj)+", "+str(fcolor)+", "+str(ecolor)+")",2)
+        obj.get_artist().set_facecolor(fcolor)
+        if(ecolor): 
+            obj.get_artist().set_facecolor(ecolor)
+        plot.draw()
 
     def remove_vertex(self,vert):
         printf("Function Graph.remove_vertex("+str(vert)+")",2)
-        #try:
-        print("Try to remove " + str(vert.get_circle()))
-        vert.get_circle().remove()
-        #except: print("Not drawn")
+        #self.hide_vertex(vert)
         vert.remove_self()
-        self.objects.remove(vert)
-        self.vertex.remove(vert)
+        try:
+            self.objects.remove(vert)
+        except: printf("[-]vert not removed from self.objects",2)
+        try:
+            self.vertex.remove(vert)
+        except: printf("[-]vert not removed from self.vertex",2)
+        try:
+            self.selected.remove(vert)
+        except: printf("[-]vert not removed from self.selected",2)
+        try:
+            vert.get_circle().remove()
+        except: printf("[-]circle not removed",2)
+        try:
+            self.frame.remove(vert)
+        except: printf("[-]vert not removed from self.frame",2)
         del vert
-        self.selected = []
+
+    def remove_edge(self,edge):
+        printf("Function Graph.remove_edge("+str(edge)+")",2)
+        print("Try to remove " + str(edge))
+        #self.hide_edge(edge)
+        edge.remove_self()
+        try:
+            self.objects.remove(edge)
+        except: printf("[-]edge not removed from self.objects",2)
+        try:
+            self.edges.remove(edge)
+        except: printf("[-]edge not removed from self.edges",2)
+        try:
+            self.selected.remove(edge)
+        except: printf("[-]edge not removed from self.selected",2)
+        try:
+            self.frame.remove(edge.get_line())
+        except: printf("[-]edge not removed from self.frame",2)
+        try:
+            edge.get_line().remove()
+        except: printf("[-]line not removed",2)
+        del edge
 
     def set_mode(self,new_mode):
         printf("Function Graph.set_mode("+str(new_mode)+")",2)
         self.mode = new_mode
 
     def get_adjacency_table(self):
+        printf("Function get_adjacency_table()",2)
         table = ([[0]*len(self.vertex)]*len(self.vertex))
         for edge in self.edges:
             vert_from = edge.get_vertex_from()
             vert_to = edge.get_vertex_to()
             table[vert_from.get_vertex_num()][vert_to.get_vertex_num()] += 1
-        del vert_from, vert_to
         return table
 
     def print_adjacency_table(self):
+        printf("Function print_adjacency_table()",2)
         for vert in self.get_adjacency_table():
             print(vert)
             
     def clear(self):
         printf("Function Graph.clear()",2)
-        for vert in self.vertex:
-            self.remove_vertex(vert)
-        for edge in self.edges:
-            self.figure.axes.remove(edge)
+        try:
+            print("self.vertex: " + str(self.vertex))
+            for vert in self.vertex:
+                self.remove_vertex(vert)
+        except:
+            for edge in self.edges:
+                self.remove_edge(edge)
         self.show_graph()
+        plot.axes.Axes.relim()
         #self.figure.axes.remove(vert)
+
+    def set_selected(self, selection):
+        printf("Function Graph.set_selected("+str(selection)+")",2)
+        if(not len(selection)): 
+            for sel in self.selected: self.select_color(sel,(.2,.2,.2))
+            self.selected = []
+            return
+        select = self.obj_from_ind(selection)
+        if(self.keep_selected): self.selected.append(sel for sel in select if not sel in self.selected)
+        else: 
+            for sel in self.selected: self.select_color(sel,(.2,.2,.2))
+            self.selected = select
+        for sel in select: self.select_color(sel,(1,0,0))
+        printf("Selected " + str(self.selected),3)
+
+    def obj_from_ind(self, ind):
+        printf("Function Graph.obj_from_ind("+str(ind)+")",2)
+        if(len(self.objects) == 0): return [] 
+        selected = [self.objects[sel] for sel in range(len(ind)-1) if ind[sel]]
+        return selected
+    
+    def type_from_ind(self, ind, g_type="Vertex"):
+        printf("Function Graph.type_from_ind("+str(ind)+", "+str(g_type)+")",2)
+        selected = [vert for vert in self.obj_from_ind(ind) if type(vert).__name__ == g_type]
+        return selected
+
+    def history_change(self,chan=-1):
+        printf("Function Graph.history_changer("+str(chan)+")",2)
+        try:
+            self.objects=self.history[self.history_at+chan]
+            self.clear()
+            self.new_to_draw=self.objects
+            self.history_at+=chan
+        except: pass
 
     class Vertex(object):
         def create_vertex(self,num,posx=1,posy=1,vertex_radius=0.1):
@@ -193,6 +380,7 @@ class Graph(object):
             self.number_vert = num
             self.position_x = posx
             self.position_y = posy
+            self.radius = vertex_radius
             self.circle = []
             self.set_circle(vertex_radius)
             self.adjacent_edges = []
@@ -210,16 +398,23 @@ class Graph(object):
             printf("Function Graph.Vertex.get_circle()",3)
             return self.circle
         
-        def set_circle(self, radius, main_color="#ff0000", round_color='#ffffff', circle_alpha=0.5):
+        def get_artist(self):
+            return self.get_circle()
+
+        def set_circle(self, radius=False, main_color=(.1,.1,.1), round_color=(0,0,0), circle_alpha=0.5):
             printf("Function Graph.Vertex.set_circle("+str(radius)+")",2)
             print(self.position_x,self.position_y)
-            self.circle = mpatch.Circle((self.position_x,self.position_y),radius,alpha=circle_alpha,color=main_color,edgecolor=round_color,visible=True,fill=False)
+            if (not radius): radius = self.radius
+            self.circle = mpatch.Circle((self.position_x,self.position_y),radius,alpha=circle_alpha,facecolor=main_color,edgecolor=round_color,visible=True,fill=False,picker=True)
             
         def add_adjacent(self,new_adj_edge):
             self.adjacent_edges.append(new_adj_edge)
                 
         def get_vertex_num(self):
             return self.number_vert
+
+        def get_vertex_radius(self):
+            return self.radius
         
         def remove_adj_edge(self, edge):
             self.adjacent_edges.remove(edge)
@@ -233,55 +428,90 @@ class Graph(object):
             printf("Function Graph.Edge.create_edge("+str(num)+", "+str(edge_segments)+")",2)
             self.segments_num = edge_segments
             self.segments_pos = []
-            self.lines = []
+            self.line = None
             self.number_edge=num
                                                        
         def connect_edge(self,vert1,vert2,edge_weight=1,directed_bool=False):
             printf("Function Graph.Edge.connect_edge("+str(vert1)+", "+str(vert2)+", "+str(edge_weight)+", "+str(directed_bool)+")",2)
             self.connected_from = vert1
             self.connected_to = vert2
+            pos = (vert1.get_vertex_position(),vert2.get_vertex_position())
+            self.length = (((pos[0][0]-pos[1][0])**2)+((pos[0][1]-pos[0][1])**2))**(1/2)
             self.weight = edge_weight
+            if(not self.length): self.length=abs(self.weight)+1
             self.directed = directed_bool
             vert1.add_adjacent(self)
             if(not self.directed):
                 vert2.add_adjacent(self)
             
-        def set_lines(self,edge_alpha=0.5,edge_color="0000FF"):
+        def set_line(self,edge_alpha=1,face_color=(0,0,.4),edge_color=(0,0,0),radius=1):
             printf("Function Graph.Edge.set_lines()",2)
             from_pos = self.connected_from.get_vertex_position()
             to_pos = self.connected_to.get_vertex_position()
-            if self.directed==True: style="<-"
-            else: style="<->"
-            new_line = mpatch.FancyArrowPatch(path=[(from_pos[0],from_pos[1]),(to_pos[0],to_pos[1])],arrow_style=style,alpha=edge_alpha,color=edge_color)
-            self.lines.append(new_line)
-            #ax.annotate("", xy=(0.5, 0.5), xytext=(0, 0),arrowprops=dict(arrowstyle="->"))
-            
-        def get_lines(self):
+            if self.directed: style="Simple"
+            else: style="Simple"
+            style+=",head_width=.1,head_length=.2,tail_width=0.05"
+            kw = dict(arrowstyle=style, alpha=edge_alpha, linestyle=None, lw=5,facecolor=face_color,edgecolor=edge_color,picker=True,connectionstyle="arc3,rad="+str(2*radius/(self.length+1)))
+            #                                                                                                                           2*edges connecting same vert ^
+            new_line = mpatch.FancyArrowPatch(posA=from_pos, posB=to_pos,shrinkA=self.connected_from.get_vertex_radius(),shrinkB=self.connected_to.get_vertex_radius(), **kw)
+            self.line = new_line
+
+        def get_line(self):
             printf("Function Graph.Edge.get_lines()",3)
-            return self.lines
+            return self.line
             
+        def get_artist(self):
+            return self.line
+
         def get_edge(self):
             printf("Function Graph.Edge.get_edge()",3)
             return(self.connected_from,self.connected_to,self.weight,self.directed)
             
-        def get_edge_num():
-            return self.numbre_edge
+        def get_edge_num(self):
+            return self.number_edge
         
-        def get_vertex_from():
+        def get_vertex_from(self):
             return self.connected_from
         
-        def get_vertex_to():
+        def get_vertex_to(self):
             return self.connected_to
         
         def remove_self(self):
-            self.connected_to.remove_adj_edge(self)
+            if(not self.directed):
+                self.connected_to.remove_adj_edge(self)
             self.connected_from.remove_adj_edge(self)
 
     #def apply_algorithm(
 
-#ax = plot.axes()
-#ax.arrow(0, 0, 0.5, 0.5, head_width=0.05, head_length=0.1, fc='k', ec='k')
-ex = Graph()
-ex.create_graph(mode_setting=0)
-ex.setup_graph()
-ex.show_graph()
+    class LassoManager(object):
+        def __init__(self, ax, data, graphclass):
+            print("LassoManager")
+            self.axes = [ax]
+            self.graph = graphclass
+            self.canvas = ax.figure.canvas
+            self.data = [data]
+            self.Nxy = [ len(data) ]
+            self.xys = [ [d for d in data] ]
+
+        def callback(self, verts):
+            printf("callback",2)
+            axind = self.axes.index(self.current_axes)
+            p = matplotlib.path.Path(verts)
+            ind = p.contains_points(self.xys[axind])
+            self.canvas.draw_idle()
+            self.canvas.widgetlock.release(self.lasso)
+            del self.lasso
+            self.graph.lasso_return(ind)
+
+        def onpress(self, event):
+            print(event)
+            if self.canvas.widgetlock.locked(): return
+            if event.inaxes is None:    return
+            self.current_axes = event.inaxes
+            self.lasso = Lasso(event.inaxes, (event.xdata, event.ydata), self.callback)
+            self.canvas.widgetlock(self.lasso)
+
+graph1 = Graph()
+graph1.create_graph(mode_setting=4)
+graph1.setup_graph(bg_color=(.8,.8,.8))
+graph1.show_graph()
