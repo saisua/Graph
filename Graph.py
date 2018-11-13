@@ -13,7 +13,11 @@ import matplotlib.path
 import math
 import matplotlib
 import random
-#Boteh
+#Para hacer:
+#Anadir grupos de vertex
+#Ordenar en base a los grupos
+#Anadir nombre vertex, wei edge
+#Anadir bidirecc edge
 
 print("\n\n")
 print("All libraries imported")
@@ -28,15 +32,25 @@ def printf(text, text_verbosity, endf="\n"):
         print(text,end=endf)
 
 class Graph(object):
-    def create_graph(self, zerox=1, zeroy=1, sizex=3, sizey=2, vertex=[], edges=[], mode_setting=1, vertex_default_radius=0.1, vertex_default_alpha=0.5):
+    def create_graph(self, zerox=1, zeroy=1, sizex=3, sizey=2, vertex=[], edges=[], mode_setting=1, vertex_default_radius=0.1, vertex_default_alpha=0.5, renderer='TkAgg'):
         printf("Function Graph.create_graph("+str(zerox)+", "+str(zeroy)+", "+str(sizex)+", "+str(sizey)+", "+str(vertex)+", "+str(edges)+", "+str(mode_setting)+", "+str(vertex_default_radius)+")",2)
         self.figure = plot.figure()        
         self.frame = self.figure.add_subplot(111,picker=True,autoscale_on=True)
         #ax    ^
         self.objects = []
         self.object_pos = []
-        self.vertex = []
-        self.edges = []
+        self.vertex = vertex
+        self.edges = edges
+        matplotlib.use(renderer)
+        """
+        renderer = 1>['GTK3Cairo', 'Qt4Cairo',
+         *'cairo', 'Qt5Agg', 'pgf', 'nbAgg', 'Qt5Cairo',
+          *'svg', 'GTK3Agg', 'MacOSX', *'agg', 'WebAgg',
+           'TkCairo', *'ps', 'TkAgg', 'WX', *'pdf', 'WXCairo',
+            'template', 'Qt4Agg', 'WXAgg']
+        *No interactivos (Solo generan un archivo)
+        """
+
         self.selected = []
         self.mode = mode_setting
         self.center = (zerox,zeroy)
@@ -103,6 +117,7 @@ class Graph(object):
         #b:organize, "delete":remo_sel, "escape":select_none
         #m:move_selected, x:clear, a:add_vertex
         #"shift":keep_sel, "enter":finish, "backspace":remove_selected
+        
         self.figure.canvas.mpl_connect('button_press_event', self.on_click)
         self.figure.canvas.mpl_connect('button_release_event', self.on_release)
         self.figure.canvas.mpl_connect('key_press_event', self.on_key)
